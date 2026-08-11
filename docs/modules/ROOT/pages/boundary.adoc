@@ -1,0 +1,20 @@
+= Client boundary
+
+The distribution contains no storage server, filesystem codec, data-acquisition
+adapter, candle projection, or provider interpretation. It depends only on the
+public HTTP contract and `httpx`.
+
+HTTPS is accepted for every host. Cleartext HTTP is accepted only for
+`localhost` and numeric loopback addresses. This validation applies to both
+sync and async constructors, so an application cannot opt into an unprotected
+remote transport through the public client.
+
+Authentication, not-found, conditional-write conflict, protocol, and transport
+failures have distinct exported exception types. Callers can retry only the
+categories appropriate to their workflow. Status and universe read operations
+expose the response ETag through `VersionedDocument`; callers pass that ETag to
+the matching update operation for compare-and-swap.
+
+All domain payload mappings remain logical JSON documents. The client owns
+required transport envelopes and must be updated when the server contract
+changes; consuming services must not copy or extend protocol code locally.

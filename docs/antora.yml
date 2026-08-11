@@ -1,0 +1,6 @@
+name: shared-mdstorage-client
+title: Shared MDStorage Client
+version: "0.1"
+start_page: ROOT:index.adoc
+nav:
+  - modules/ROOT/nav.adoc

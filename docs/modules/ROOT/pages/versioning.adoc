@@ -1,0 +1,34 @@
+= Versioning and releases
+
+The Python distribution and public API follow semantic versioning. An
+incompatible callable, model, exception, or transport behavior requires a new
+major version. Compatible operation and model additions require a minor
+version. Internal corrections without a public contract change require a patch
+version.
+
+Each version tag runs the locked offline test suite and builds one set of
+distributions. The workflow creates a draft release containing that exact
+artifact set and a SHA-256 manifest, then publishes the populated release.
+Existing releases refuse replacement. Repository administrators should also
+enable GitHub immutable releases. After end-to-end acceptance, an operator
+starts the separate PyPI workflow for that tag. It downloads and verifies those
+release artifacts before the isolated OIDC job publishes them. No package
+repository token is stored in the repository.
+
+During the initial private integration phase, consumers install the wheel from
+the matching GitHub Release and pin its SHA-256 hash. After the PyPI release is
+trusted, consumers switch to the exact PyPI version in a hash-locked dependency
+input. A consumer must not select a branch, floating tag, or unbounded version.
+
+== Trusted publisher setup
+
+Configure the one-time PyPI pending publisher with these identity fields:
+
+* owner: `latheiere`
+* repository: `shared-mdstorage-client`
+* workflow: `publish-pypi.yml`
+* environment: `pypi`
+
+Configure the GitHub `pypi` environment with required manual approval. The
+environment protects only the OIDC publish job; build and release-asset jobs do
+not receive an identity token.

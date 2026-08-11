@@ -1,0 +1,55 @@
+= Public Python API
+
+`StorageClient` and `AsyncStorageClient` expose the same operations. The async
+variant returns each result through `await` and supports `async with`; the sync
+variant supports `with`.
+
+== Constructors
+
+[source,python]
+----
+StorageClient(base_url, *, token=None, timeout=10.0, transport=None)
+AsyncStorageClient(base_url, *, token=None, timeout=10.0, transport=None)
+----
+
+== Operations
+
+* `list_files(prefix="", cursor=None, limit=None) -> FilePage`
+* `stat_file(path) -> FileMetadata`
+* `get_file(path, range_start=None, range_end=None) -> FileDownload`
+* `put_file(path, content, idempotency_key=..., if_match=None,
+  if_none_match=False, content_type="application/octet-stream") -> FileMutation`
+* `append_file(path, content, idempotency_key=...,
+  content_type="application/octet-stream") -> FileMutation`
+* `ingest_observations(payload, idempotency_key=...) -> ObservationIngestResult`
+* `append_run(gate_id, run_id, payload, idempotency_key=...) -> RunAppendResult`
+* `put_status(gate_id, payload, idempotency_key=..., if_match=None,
+  if_none_match=False) -> StateMutation`
+* `get_status(gate_id) -> JsonObject`
+* `get_status_document(gate_id) -> VersionedDocument`
+* `put_universe(gate_id, payload, idempotency_key=..., if_match=None,
+  if_none_match=False) -> StateMutation`
+* `get_universe(gate_id) -> JsonObject`
+* `get_universe_document(gate_id) -> VersionedDocument`
+* `list_universes() -> UniverseList`
+* `latest(payload, before_ms=None) -> LatestResult`
+* `history(payload) -> HistoryPage`
+* `resume(payload) -> ResumeResult`
+* `first_open_interest_times(market_ids) -> FirstOpenInterestTimes`
+* `changes(params=None) -> ChangePage`
+* `readiness() -> JsonObject`
+
+== Exported models and failures
+
+Typed models are `FileMetadata`, `FileRange`, `FileDownload`, `FileMutation`,
+`FilePage`, `VersionedDocument`, `GateUniverse`, `UniverseList`,
+`FirstOpenInterestTimes`, `ObservationChange`, `ObservationIngestResult`,
+`RunAppendResult`, `StateMutation`, `LatestResult`, `HistoryPage`,
+`ResumeResult`, `CommittedObservationChange`, and `ChangePage`.
+
+`validate_structural_identifier(value, field="identifier")` returns the
+validated string or raises `ValueError`. It is the shared path/payload boundary
+for gate, run, and batch identifiers.
+
+Typed failures are `AuthenticationError`, `ConflictError`, `NotFoundError`,
+`ProtocolError`, and `TransportError`, all derived from `StorageClientError`.

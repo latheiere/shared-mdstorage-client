@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools==82.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shared-mdstorage-client"
+version = "0.1.0"
+description = "Typed sync and async client for the Shared MDStorage HTTP contract"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx==0.28.1",
+]
+
+[project.urls]
+Repository = "https://github.com/latheiere/shared-mdstorage-client"
+Issues = "https://github.com/latheiere/shared-mdstorage-client/issues"
+
+[project.optional-dependencies]
+dev = [
+  "build==1.5.0",
+  "pytest==9.1.1",
+  "setuptools==82.0.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+shared_mdstorage_client = ["py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

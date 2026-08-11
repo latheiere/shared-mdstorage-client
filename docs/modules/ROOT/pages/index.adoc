@@ -1,0 +1,13 @@
+= Shared MDStorage Client
+
+`shared-mdstorage-client` is the supported Python transport boundary for the
+Shared MDStorage HTTP API. It provides equivalent synchronous and asynchronous
+clients, typed transport metadata, and typed failure categories.
+
+The client owns route construction, authentication headers, range semantics,
+entity tags, idempotency headers, response validation, and the transport
+envelopes for logical state documents. Applications use these operations
+instead of implementing private HTTP adapters.
+
+See xref:boundary.adoc[Boundary], xref:api.adoc[Python API], and
+xref:versioning.adoc[Versioning and releases].

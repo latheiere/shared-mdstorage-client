@@ -1,0 +1,78 @@
+name: Build and publish GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Verify the release tag matches the project version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          expected = f"v{project['version']}"
+          if os.environ["RELEASE_TAG"] != expected:
+              raise SystemExit(
+                  f"release tag {os.environ['RELEASE_TAG']!r} does not match {expected!r}"
+              )
+          PY
+      - name: Install locked development dependencies
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+      - name: Run offline tests
+        run: python -m pytest -q
+      - name: Build release distributions once
+        run: python -m build --no-isolation
+      - name: Verify wheel package boundary
+        run: python scripts/verify_wheel_boundary.py
+      - name: Verify installed runtime identity
+        run: |
+          python -m pip install --force-reinstall --no-deps dist/*.whl
+          python -c 'from importlib.metadata import version; from shared_mdstorage_client import __version__; assert __version__ == version("shared-mdstorage-client")'
+      - name: Record release hashes
+        working-directory: dist
+        run: sha256sum *.whl *.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-distributions
+          path: dist
+      - name: Create a draft with assets, then publish it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "A release already exists for this tag; refusing to replace assets."
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --generate-notes --verify-tag --title "$GITHUB_REF_NAME"
+          gh release edit "$GITHUB_REF_NAME" --draft=false

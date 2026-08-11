@@ -1,0 +1,147 @@
+name: Publish an approved release to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag containing verified artifacts
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  stage-release-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Verify the approved tag matches the project version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          python - <<'PY'
+          import os
+          import pathlib
+          import tomllib
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          expected = f"v{project['version']}"
+          if os.environ["RELEASE_TAG"] != expected:
+              raise SystemExit(
+                  f"approved tag {os.environ['RELEASE_TAG']!r} does not match {expected!r}"
+              )
+          PY
+      - name: Download the existing GitHub Release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          mkdir dist
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern '*.whl' --pattern '*.tar.gz' --pattern SHA256SUMS
+      - name: Validate the release artifact and manifest boundary
+        run: |
+          python - <<'PY'
+          import pathlib
+          import re
+          import tomllib
+
+          dist = pathlib.Path("dist")
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          normalized = project["name"].replace("-", "_")
+          version = project["version"]
+          all_wheels = sorted(dist.glob("*.whl"))
+          all_sdists = sorted(dist.glob("*.tar.gz"))
+          if len(all_wheels) != 1 or len(all_sdists) != 1:
+              raise SystemExit("release must contain exactly one wheel and one sdist")
+          wheel, sdist = all_wheels[0], all_sdists[0]
+          if not wheel.name.startswith(f"{normalized}-{version}-"):
+              raise SystemExit("wheel filename does not match the project identity")
+          if sdist.name != f"{normalized}-{version}.tar.gz":
+              raise SystemExit("sdist filename does not match the project identity")
+
+          manifest = dist / "SHA256SUMS"
+          manifest_entries = []
+          for line in manifest.read_text(encoding="ascii").splitlines():
+              parts = line.split()
+              if len(parts) != 2 or re.fullmatch(r"[0-9a-f]{64}", parts[0]) is None:
+                  raise SystemExit("checksum manifest contains an invalid entry")
+              artifact = parts[1].removeprefix("*")
+              if pathlib.PurePosixPath(artifact).name != artifact:
+                  raise SystemExit("checksum manifest paths must be plain filenames")
+              manifest_entries.append(artifact)
+          expected = {wheel.name, sdist.name}
+          if len(manifest_entries) != 2 or set(manifest_entries) != expected:
+              raise SystemExit("checksum manifest must name only the approved archives")
+          PY
+      - name: Verify the published checksum manifest
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Verify wheel package boundary
+        run: python scripts/verify_wheel_boundary.py
+      - name: Verify distribution filenames and package metadata
+        run: |
+          python - <<'PY'
+          import email
+          import pathlib
+          import tarfile
+          import tomllib
+          import zipfile
+
+          project = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]
+          name = project["name"]
+          version = project["version"]
+          normalized = name.replace("-", "_")
+          wheels = list(pathlib.Path("dist").glob("*.whl"))
+          sdists = list(pathlib.Path("dist").glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              raise SystemExit("release must contain exactly one wheel and sdist")
+          if not wheels[0].name.startswith(f"{normalized}-{version}-"):
+              raise SystemExit("wheel filename does not match the project identity")
+          if sdists[0].name != f"{normalized}-{version}.tar.gz":
+              raise SystemExit("sdist filename does not match the project identity")
+
+          with zipfile.ZipFile(wheels[0]) as archive:
+              names = [item for item in archive.namelist() if item.endswith(".dist-info/METADATA")]
+              if len(names) != 1:
+                  raise SystemExit("wheel must contain one METADATA document")
+              wheel_metadata = email.message_from_bytes(archive.read(names[0]))
+          with tarfile.open(sdists[0], "r:gz") as archive:
+              members = [item for item in archive.getmembers() if item.name.endswith("/PKG-INFO")]
+              if len(members) != 1:
+                  raise SystemExit("sdist must contain one PKG-INFO document")
+              handle = archive.extractfile(members[0])
+              if handle is None:
+                  raise SystemExit("sdist package metadata is unreadable")
+              sdist_metadata = email.message_from_bytes(handle.read())
+          for label, metadata in (("wheel", wheel_metadata), ("sdist", sdist_metadata)):
+              if metadata["Name"] != name or metadata["Version"] != version:
+                  raise SystemExit(f"{label} package identity does not match pyproject.toml")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: approved-python-distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: stage-release-artifacts
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: approved-python-distributions
+          path: dist
+      - name: Publish through trusted identity
+        uses: pypa/gh-action-pypi-publish@release/v1
