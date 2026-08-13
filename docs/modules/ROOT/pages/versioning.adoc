@@ -22,7 +22,7 @@ input. A consumer must not select a branch, floating tag, or unbounded version.
 
 == Trusted publisher setup
 
-Configure the one-time PyPI pending publisher with these identity fields:
+The PyPI trusted publisher uses these identity fields:
 
 * owner: `latheiere`
 * repository: `shared-mdstorage-client`
