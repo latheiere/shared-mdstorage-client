@@ -70,9 +70,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "A release already exists for this tag; refusing to replace assets."
             exit 1
           fi
-          gh release create "$GITHUB_REF_NAME" dist/* --draft --generate-notes --verify-tag --title "$GITHUB_REF_NAME"
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --generate-notes --verify-tag --title "$GITHUB_REF_NAME"
+          gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
