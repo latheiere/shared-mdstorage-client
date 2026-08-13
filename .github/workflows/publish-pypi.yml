@@ -112,7 +112,11 @@ jobs:
                   raise SystemExit("wheel must contain one METADATA document")
               wheel_metadata = email.message_from_bytes(archive.read(names[0]))
           with tarfile.open(sdists[0], "r:gz") as archive:
-              members = [item for item in archive.getmembers() if item.name.endswith("/PKG-INFO")]
+              members = [
+                  item
+                  for item in archive.getmembers()
+                  if item.name.endswith("/PKG-INFO") and item.name.count("/") == 1
+              ]
               if len(members) != 1:
                   raise SystemExit("sdist must contain one PKG-INFO document")
               handle = archive.extractfile(members[0])

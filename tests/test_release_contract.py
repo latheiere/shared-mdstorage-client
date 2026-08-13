@@ -29,6 +29,7 @@ def test_release_workflows_preserve_tag_artifact_and_publisher_provenance() -> N
     assert "checksum manifest paths must be plain filenames" in publisher
     assert "sha256sum --check SHA256SUMS" in publisher
     assert "python scripts/verify_wheel_boundary.py" in publisher
+    assert 'item.name.count("/") == 1' in publisher
     assert "name: pypi" in publisher
     assert "id-token: write" in publisher
     assert "pypa/gh-action-pypi-publish@release/v1" in publisher
