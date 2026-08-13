@@ -52,6 +52,6 @@ artifacts through an OIDC trusted publisher.
 - [API reference](docs/modules/ROOT/pages/api.adoc)
 - [Client boundary](docs/modules/ROOT/pages/boundary.adoc)
 - [Versioning](docs/modules/ROOT/pages/versioning.adoc)
-- [Security policy](SECURITY.md)
+- [Support and defect reports](https://github.com/latheiere/shared-mdstorage-client/issues)
 
 Licensed under the terms in [LICENSE](LICENSE).
