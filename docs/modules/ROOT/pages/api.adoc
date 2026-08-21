@@ -32,12 +32,16 @@ AsyncStorageClient(base_url, *, token=None, timeout=10.0, transport=None)
 * `get_universe(gate_id) -> JsonObject`
 * `get_universe_document(gate_id) -> VersionedDocument`
 * `list_universes() -> UniverseList`
-* `latest(payload, before_ms=None) -> LatestResult`
-* `history(payload) -> HistoryPage`
+* `latest(payload, before_ms=None, at_cursor=None) -> LatestResult`
+* `history(payload, at_cursor=None) -> HistoryPage`
 * `resume(payload) -> ResumeResult`
-* `first_open_interest_times(market_ids) -> FirstOpenInterestTimes`
+* `first_open_interest_times(market_ids, at_cursor=None) -> FirstOpenInterestTimes`
 * `changes(params=None) -> ChangePage`
 * `readiness() -> JsonObject`
+
+The optional keyword-only `at_cursor` argument is a non-negative storage commit
+cursor. Cursor-bounded calls require the service to echo that exact cursor;
+missing or mismatched response cursors raise `ProtocolError`.
 
 == Exported models and failures
 

@@ -7,7 +7,7 @@ implementation or market-specific collection logic.
 ## Install
 
 ```bash
-python -m pip install shared-mdstorage-client==0.1.0
+python -m pip install shared-mdstorage-client==0.2.0
 ```
 
 Pin the exact version and artifact hash in production dependency locks.
@@ -29,7 +29,9 @@ accepted everywhere; cleartext HTTP is limited to loopback addresses.
 
 - conditional file reads, replacements, and idempotent appends;
 - typed observation ingestion, run, status, and universe operations;
-- latest, history, resume, first-observation, and change queries;
+- latest, history, first-observation, and change queries with validated
+  cursor-bounded snapshot support;
+- resume planning queries;
 - entity-tag compare-and-swap helpers; and
 - distinct authentication, conflict, protocol, and transport errors.
 

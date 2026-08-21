@@ -451,6 +451,8 @@ def _parse_universe_list(response: httpx.Response) -> UniverseList:
 
 def _parse_first_open_interest_times(
     response: httpx.Response,
+    *,
+    at_cursor: int | None,
 ) -> FirstOpenInterestTimes:
     payload = _json_object(response)
     schema_version = _schema_version_one(payload, response=response)
@@ -466,7 +468,15 @@ def _parse_first_open_interest_times(
         times[market_id] = _nonnegative_int(
             value, field="first open-interest time", response=response
         )
-    return FirstOpenInterestTimes(schema_version=schema_version, times=times)
+    return FirstOpenInterestTimes(
+        schema_version=schema_version,
+        times=times,
+        at_cursor=_response_at_cursor(
+            payload,
+            requested=at_cursor,
+            response=response,
+        ),
+    )
 
 
 def _parse_changes(response: httpx.Response, *, after: int) -> ChangePage:
@@ -722,7 +732,12 @@ def _parse_run_append(response: httpx.Response) -> RunAppendResult:
     )
 
 
-def _parse_latest(response: httpx.Response, *, metric: str) -> LatestResult:
+def _parse_latest(
+    response: httpx.Response,
+    *,
+    metric: str,
+    at_cursor: int | None,
+) -> LatestResult:
     payload = _json_object(response)
     raw_rows = payload.get("rows")
     if not isinstance(raw_rows, dict) or not all(
@@ -738,11 +753,20 @@ def _parse_latest(response: httpx.Response, *, metric: str) -> LatestResult:
             payload.get("metric"), field="metric", expected=metric, response=response
         ),
         rows=dict(raw_rows),
+        at_cursor=_response_at_cursor(
+            payload,
+            requested=at_cursor,
+            response=response,
+        ),
         details=payload,
     )
 
 
-def _parse_history(response: httpx.Response) -> HistoryPage:
+def _parse_history(
+    response: httpx.Response,
+    *,
+    at_cursor: int | None,
+) -> HistoryPage:
     payload = _json_object(response)
     raw_rows = payload.get("rows")
     if not isinstance(raw_rows, list) or not all(
@@ -782,6 +806,11 @@ def _parse_history(response: httpx.Response) -> HistoryPage:
         present_market_ids=tuple(raw_present),
         has_more=has_more,
         next_after=next_after,
+        at_cursor=_response_at_cursor(
+            payload,
+            requested=at_cursor,
+            response=response,
+        ),
         details=payload,
     )
 
@@ -817,8 +846,46 @@ def _market_id_payload(market_ids: Sequence[str]) -> JsonObject:
     return {"market_ids": values}
 
 
+def _request_at_cursor(
+    body: JsonObject,
+    *,
+    at_cursor: int | None,
+) -> JsonObject:
+    if "at_cursor" in body:
+        raise ValueError("at_cursor must be passed as the named argument")
+    if at_cursor is not None:
+        if type(at_cursor) is not int or at_cursor < 0:
+            raise ValueError("at_cursor must be a non-negative integer")
+        body["at_cursor"] = at_cursor
+    return body
+
+
+def _response_at_cursor(
+    payload: JsonObject,
+    *,
+    requested: int | None,
+    response: httpx.Response,
+) -> int | None:
+    if requested is None:
+        raw = payload.get("at_cursor")
+        if raw is None:
+            return None
+        return _nonnegative_int(raw, field="at_cursor", response=response)
+    actual = _nonnegative_int(
+        payload.get("at_cursor"),
+        field="at_cursor",
+        response=response,
+    )
+    if actual != requested:
+        raise _protocol_error(response, "storage response changed at_cursor")
+    return actual
+
+
 def _latest_payload(
-    payload: JsonMapping, *, before_ms: int | None
+    payload: JsonMapping,
+    *,
+    before_ms: int | None,
+    at_cursor: int | None,
 ) -> JsonObject:
     body = dict(payload)
     if "before_ms" in body:
@@ -827,7 +894,7 @@ def _latest_payload(
         if type(before_ms) is not int or before_ms <= 0:
             raise ValueError("before_ms must be a positive integer")
         body["before_ms"] = before_ms
-    return body
+    return _request_at_cursor(body, at_cursor=at_cursor)
 
 
 def _ingest_payload(payload: JsonMapping) -> JsonObject:
@@ -1088,9 +1155,17 @@ class StorageClient:
         return _parse_universe_list(self._request("GET", "v1/gates/universes"))
 
     def latest(
-        self, payload: JsonMapping, *, before_ms: int | None = None
+        self,
+        payload: JsonMapping,
+        *,
+        before_ms: int | None = None,
+        at_cursor: int | None = None,
     ) -> LatestResult:
-        body = _latest_payload(payload, before_ms=before_ms)
+        body = _latest_payload(
+            payload,
+            before_ms=before_ms,
+            at_cursor=at_cursor,
+        )
         return _parse_latest(
             self._request(
                 "POST",
@@ -1098,13 +1173,20 @@ class StorageClient:
                 json=body,
             ),
             metric=_request_metric(body),
+            at_cursor=at_cursor,
         )
 
-    def history(self, payload: JsonMapping) -> HistoryPage:
-        body = dict(payload)
+    def history(
+        self,
+        payload: JsonMapping,
+        *,
+        at_cursor: int | None = None,
+    ) -> HistoryPage:
+        body = _request_at_cursor(dict(payload), at_cursor=at_cursor)
         _request_metric(body)
         return _parse_history(
-            self._request("POST", "v1/query/history", json=body)
+            self._request("POST", "v1/query/history", json=body),
+            at_cursor=at_cursor,
         )
 
     def resume(self, payload: JsonMapping) -> ResumeResult:
@@ -1115,14 +1197,24 @@ class StorageClient:
         )
 
     def first_open_interest_times(
-        self, market_ids: Sequence[str]
+        self,
+        market_ids: Sequence[str],
+        *,
+        at_cursor: int | None = None,
     ) -> FirstOpenInterestTimes:
+        body = _request_at_cursor(
+            _market_id_payload(market_ids),
+            at_cursor=at_cursor,
+        )
         response = self._request(
             "POST",
             "v1/query/first-open-interest-times",
-            json=_market_id_payload(market_ids),
+            json=body,
         )
-        return _parse_first_open_interest_times(response)
+        return _parse_first_open_interest_times(
+            response,
+            at_cursor=at_cursor,
+        )
 
     def changes(self, params: QueryParameters | None = None) -> ChangePage:
         query = _changes_params(params)
@@ -1355,9 +1447,17 @@ class AsyncStorageClient:
         return _parse_universe_list(response)
 
     async def latest(
-        self, payload: JsonMapping, *, before_ms: int | None = None
+        self,
+        payload: JsonMapping,
+        *,
+        before_ms: int | None = None,
+        at_cursor: int | None = None,
     ) -> LatestResult:
-        body = _latest_payload(payload, before_ms=before_ms)
+        body = _latest_payload(
+            payload,
+            before_ms=before_ms,
+            at_cursor=at_cursor,
+        )
         return _parse_latest(
             await self._request(
                 "POST",
@@ -1365,13 +1465,20 @@ class AsyncStorageClient:
                 json=body,
             ),
             metric=_request_metric(body),
+            at_cursor=at_cursor,
         )
 
-    async def history(self, payload: JsonMapping) -> HistoryPage:
-        body = dict(payload)
+    async def history(
+        self,
+        payload: JsonMapping,
+        *,
+        at_cursor: int | None = None,
+    ) -> HistoryPage:
+        body = _request_at_cursor(dict(payload), at_cursor=at_cursor)
         _request_metric(body)
         return _parse_history(
-            await self._request("POST", "v1/query/history", json=body)
+            await self._request("POST", "v1/query/history", json=body),
+            at_cursor=at_cursor,
         )
 
     async def resume(self, payload: JsonMapping) -> ResumeResult:
@@ -1383,14 +1490,24 @@ class AsyncStorageClient:
         )
 
     async def first_open_interest_times(
-        self, market_ids: Sequence[str]
+        self,
+        market_ids: Sequence[str],
+        *,
+        at_cursor: int | None = None,
     ) -> FirstOpenInterestTimes:
+        body = _request_at_cursor(
+            _market_id_payload(market_ids),
+            at_cursor=at_cursor,
+        )
         response = await self._request(
             "POST",
             "v1/query/first-open-interest-times",
-            json=_market_id_payload(market_ids),
+            json=body,
         )
-        return _parse_first_open_interest_times(response)
+        return _parse_first_open_interest_times(
+            response,
+            at_cursor=at_cursor,
+        )
 
     async def changes(
         self, params: QueryParameters | None = None

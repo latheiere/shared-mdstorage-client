@@ -209,10 +209,15 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 },
             )
         if request.url.path == "/v1/query/first-open-interest-times":
+            assert body == {
+                "market_ids": ["market-a", "market-b"],
+                "at_cursor": 7,
+            }
             return httpx.Response(
                 200,
                 json={
                     "schema_version": "1",
+                    "at_cursor": 7,
                     "times": {"market-a": 100, "market-b": 200},
                 },
             )
@@ -318,10 +323,16 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 "market_ids": ["market-a"],
                 "sample_kinds": ["current"],
                 "before_ms": 1_800_000_000_000,
+                "at_cursor": 7,
             }
             return httpx.Response(
                 200,
-                json={"schema_version": "1", "metric": body["metric"], "rows": {}},
+                json={
+                    "schema_version": "1",
+                    "metric": body["metric"],
+                    "at_cursor": 7,
+                    "rows": {},
+                },
             )
         if request.url.path == "/v1/query/history":
             assert body == {
@@ -330,11 +341,13 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 "stop_ms": OBSERVATION_TIME_MS + 1_000,
                 "market_ids": ["market-a"],
                 "limit": 100,
+                "at_cursor": 7,
             }
             return httpx.Response(
                 200,
                 json={
                     "schema_version": "1",
+                    "at_cursor": 7,
                     "rows": [],
                     "present_market_ids": [],
                     "has_more": False,
@@ -403,6 +416,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 "sample_kinds": ["current"],
             },
             before_ms=1_800_000_000_000,
+            at_cursor=7,
         )
         history = client.history(
             {
@@ -411,7 +425,8 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 "stop_ms": OBSERVATION_TIME_MS + 1_000,
                 "market_ids": ["market-a"],
                 "limit": 100,
-            }
+            },
+            at_cursor=7,
         )
         resume = client.resume(
             {
@@ -426,7 +441,10 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                 "sample_kind": "history",
             }
         )
-        first_times = client.first_open_interest_times(["market-a", "market-b"])
+        first_times = client.first_open_interest_times(
+            ["market-a", "market-b"],
+            at_cursor=7,
+        )
         changes = client.changes({"after": 2, "limit": 10})
         client.readiness()
 
@@ -458,10 +476,15 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
         "market_ids": ["market-a"],
         "sample_kinds": ["current"],
         "before_ms": 1_800_000_000_000,
+        "at_cursor": 7,
     }
-    assert observed[10][2] == {"market_ids": ["market-a", "market-b"]}
+    assert observed[10][2] == {
+        "market_ids": ["market-a", "market-b"],
+        "at_cursor": 7,
+    }
     assert universes.universes[0].gate_id == "gate-a"
     assert first_times.times == {"market-a": 100, "market-b": 200}
+    assert first_times.at_cursor == 7
     assert changes.next_cursor == 3
     assert changes.reset_required is False
     assert ingest.gate_id == "gate-a"
@@ -473,7 +496,9 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
     assert universe_payload == universe_snapshot()
     assert latest.metric == "open_interest"
     assert latest.rows == {}
+    assert latest.at_cursor == 7
     assert history.has_more is False
+    assert history.at_cursor == 7
     assert resume.metric == "open_interest"
 
 
@@ -642,6 +667,11 @@ def test_async_client_enforces_the_same_transport_boundary() -> None:
         ),
         lambda client: client.first_open_interest_times("market-a"),
         lambda client: client.latest({"metric": "funding"}, before_ms=0),
+        lambda client: client.latest({"metric": "funding"}, at_cursor=True),
+        lambda client: client.history({"metric": "funding"}, at_cursor=-1),
+        lambda client: client.first_open_interest_times(
+            ["market-a"], at_cursor=-1
+        ),
         lambda client: client.latest(
             {"metric": "funding", "before_ms": 100}, before_ms=200
         ),
@@ -669,6 +699,92 @@ def test_invalid_success_body_raises_protocol_error() -> None:
     with StorageClient("https://storage.test", transport=transport) as client:
         with pytest.raises(ProtocolError, match="invalid JSON"):
             client.readiness()
+
+
+@pytest.mark.parametrize("returned_cursor", [None, 6, 8, True])
+def test_cursor_bounded_queries_require_the_exact_response_cursor(
+    returned_cursor: object,
+) -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        payload = {
+            "schema_version": "1",
+            "metric": "open_interest",
+            "rows": {},
+        }
+        if returned_cursor is not None:
+            payload["at_cursor"] = returned_cursor
+        return httpx.Response(200, json=payload)
+
+    with StorageClient(
+        "https://storage.test",
+        transport=httpx.MockTransport(handler),
+    ) as client:
+        with pytest.raises(ProtocolError, match="at_cursor"):
+            client.latest(
+                {
+                    "metric": "open_interest",
+                    "market_ids": ["market-a"],
+                },
+                at_cursor=7,
+            )
+
+
+def test_async_cursor_bounded_queries_send_and_validate_one_cursor() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["at_cursor"] == 5
+        if request.url.path == "/v1/query/latest":
+            return httpx.Response(
+                200,
+                json={
+                    "schema_version": "1",
+                    "metric": body["metric"],
+                    "at_cursor": 5,
+                    "rows": {},
+                },
+            )
+        if request.url.path == "/v1/query/history":
+            return httpx.Response(
+                200,
+                json={
+                    "schema_version": "1",
+                    "at_cursor": 5,
+                    "rows": [],
+                    "present_market_ids": [],
+                    "has_more": False,
+                    "next_after": None,
+                },
+            )
+        return httpx.Response(
+            200,
+            json={"schema_version": "1", "at_cursor": 5, "times": {}},
+        )
+
+    async def scenario() -> None:
+        async with AsyncStorageClient(
+            "https://storage.test",
+            transport=httpx.MockTransport(handler),
+        ) as client:
+            latest = await client.latest(
+                {"metric": "open_interest", "market_ids": ["market-a"]},
+                at_cursor=5,
+            )
+            history = await client.history(
+                {
+                    "metric": "open_interest",
+                    "start_ms": OBSERVATION_TIME_MS - 1,
+                    "stop_ms": OBSERVATION_TIME_MS + 1,
+                    "market_ids": ["market-a"],
+                },
+                at_cursor=5,
+            )
+            first = await client.first_open_interest_times(
+                ["market-a"],
+                at_cursor=5,
+            )
+        assert latest.at_cursor == history.at_cursor == first.at_cursor == 5
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(

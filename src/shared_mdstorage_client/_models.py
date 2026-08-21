@@ -126,6 +126,7 @@ class LatestResult:
     schema_version: str
     metric: str
     rows: dict[str, JsonObject]
+    at_cursor: int | None = None
     details: JsonObject = field(default_factory=dict)
 
 
@@ -138,6 +139,7 @@ class HistoryPage:
     present_market_ids: tuple[str, ...]
     has_more: bool
     next_after: tuple[int, str, str] | None
+    at_cursor: int | None = None
     details: JsonObject = field(default_factory=dict)
 
 
@@ -173,6 +175,7 @@ class FirstOpenInterestTimes:
 
     schema_version: str
     times: dict[str, int]
+    at_cursor: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
