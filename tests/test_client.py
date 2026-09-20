@@ -28,7 +28,7 @@ def open_interest_row() -> dict[str, object]:
     return {
         "observation_time_ms": OBSERVATION_TIME_MS,
         "collected_at_ms": OBSERVATION_TIME_MS + 100,
-        "sample_kind": "current",
+        "sample_type": "C",
         "market_id": "market-a",
         "oi_value_usd": "100.5",
     }
@@ -38,12 +38,11 @@ def funding_row() -> dict[str, object]:
     return {
         "observation_time_ms": OBSERVATION_TIME_MS,
         "collected_at_ms": OBSERVATION_TIME_MS + 100,
-        "sample_kind": "current",
+        "sample_type": "C",
         "market_id": "market-a",
-        "funding_rate": "0.0001",
-        "funding_kind": "indicative",
-        "funding_interval_kind": "explicit_duration",
-        "funding_interval_ms": 28_800_000,
+        "rate": "0.0001",
+        "rate_type": "I",
+        "interval_seconds": 28800,
     }
 
 
@@ -235,9 +234,10 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                             "metric": "open_interest",
                             "observation_time_ms": 1_786_348_800_000,
                             "market_id": "market-a",
-                            "sample_kind": "current",
+                            "sample_type": "C",
                             "revision": 1,
-                            "row": {"market_id": "market-a"},
+                            "operation_type": "I",
+                            "row": {"market_id": "market-a", "commit_seq": "3", "operation_type": "I"},
                         }
                     ],
                     "next_cursor": 3,
@@ -270,7 +270,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                             "cursor": 1,
                             "observation_time_ms": OBSERVATION_TIME_MS,
                             "market_id": "market-a",
-                            "sample_kind": "current",
+                            "sample_type": "C",
                             "revision": 1,
                         }
                     ],
@@ -321,7 +321,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
             assert body == {
                 "metric": "open_interest",
                 "market_ids": ["market-a"],
-                "sample_kinds": ["current"],
+                "sample_types": ["C"],
                 "before_ms": 1_800_000_000_000,
                 "at_cursor": 7,
             }
@@ -364,7 +364,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                         "interval_seconds": 300,
                     }
                 ],
-                "sample_kind": "history",
+                "sample_type": "H",
             }
             return httpx.Response(
                 200,
@@ -413,7 +413,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
             {
                 "metric": "open_interest",
                 "market_ids": ["market-a"],
-                "sample_kinds": ["current"],
+                "sample_types": ["C"],
             },
             before_ms=1_800_000_000_000,
             at_cursor=7,
@@ -438,7 +438,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
                         "interval_seconds": 300,
                     }
                 ],
-                "sample_kind": "history",
+                "sample_type": "H",
             }
         )
         first_times = client.first_open_interest_times(
@@ -474,7 +474,7 @@ def test_sync_domain_methods_use_the_versioned_routes() -> None:
     assert observed[7][2] == {
         "metric": "open_interest",
         "market_ids": ["market-a"],
-        "sample_kinds": ["current"],
+        "sample_types": ["C"],
         "before_ms": 1_800_000_000_000,
         "at_cursor": 7,
     }
@@ -877,7 +877,7 @@ def test_async_domain_identifiers_fail_before_transport() -> None:
             {
                 "metric": "funding",
                 "market_ids": ["market-a"],
-                "sample_kinds": ["current"],
+                "sample_types": ["C"],
             }
         ),
         lambda client: client.history(
@@ -898,7 +898,7 @@ def test_async_domain_identifiers_fail_before_transport() -> None:
                         "interval_seconds": 300,
                     }
                 ],
-                "sample_kind": "history",
+                "sample_type": "H",
             }
         ),
     ],
@@ -931,7 +931,7 @@ def test_ingest_success_enforces_positive_ordered_identity_bound_result(
         "cursor": 1,
         "observation_time_ms": 1_786_348_800_000,
         "market_id": "market-a",
-        "sample_kind": "current",
+        "sample_type": "C",
         "revision": 1,
     }
     payload = {
@@ -1043,7 +1043,7 @@ def test_async_client_uses_the_same_contract_and_error_mapping() -> None:
                             "cursor": 1,
                             "observation_time_ms": OBSERVATION_TIME_MS,
                             "market_id": "market-a",
-                            "sample_kind": "current",
+                            "sample_type": "C",
                             "revision": 1,
                         }
                     ],
@@ -1054,7 +1054,7 @@ def test_async_client_uses_the_same_contract_and_error_mapping() -> None:
             assert body == {
                 "metric": "funding",
                 "market_ids": ["market-a"],
-                "sample_kinds": ["current"],
+                "sample_types": ["C"],
                 "before_ms": 1_800_000_000_000,
             }
             return httpx.Response(
@@ -1106,7 +1106,7 @@ def test_async_client_uses_the_same_contract_and_error_mapping() -> None:
                 {
                     "metric": "funding",
                     "market_ids": ["market-a"],
-                    "sample_kinds": ["current"],
+                    "sample_types": ["C"],
                 },
                 before_ms=1_800_000_000_000,
             )

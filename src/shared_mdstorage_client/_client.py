@@ -31,7 +31,6 @@ from ._models import (
     JsonObject,
     JsonValue,
     LatestResult,
-    ObservationChange,
     ObservationIngestResult,
     ResumeResult,
     RunAppendResult,
@@ -497,35 +496,28 @@ def _parse_changes(response: httpx.Response, *, after: int) -> ChangePage:
         )
         if metric not in {"open_interest", "funding"}:
             raise _protocol_error(response, "change response has an invalid metric")
+        operation_type = raw_change.get("operation_type")
+        if operation_type not in {"I", "C", "R"}:
+            raise _protocol_error(
+                response, "change response has invalid operation_type"
+            )
+        cursor = _positive_response_int(
+            raw_change.get("cursor"), field="cursor", response=response
+        )
+        if (
+            str(row.get("commit_seq")) != str(cursor)
+            or row.get("operation_type") != operation_type
+        ):
+            raise _protocol_error(
+                response, "change row does not match its cursor and operation"
+            )
         change = CommittedObservationChange(
-            cursor=_positive_response_int(
-                raw_change.get("cursor"), field="cursor", response=response
-            ),
-            gate_id=_response_structural_identifier(
-                raw_change.get("gate_id"), field="gate_id", response=response
-            ),
-            batch_id=_response_structural_identifier(
-                raw_change.get("batch_id"), field="batch_id", response=response
-            ),
-            metric=metric,
-            observation_time_ms=_positive_response_int(
-                raw_change.get("observation_time_ms"),
-                field="observation_time_ms",
-                response=response,
-            ),
-            market_id=_required_string(
-                raw_change.get("market_id"), field="market_id", response=response
-            ),
-            sample_kind=_required_string(
-                raw_change.get("sample_kind"), field="sample_kind", response=response
-            ),
-            revision=_positive_response_int(
-                raw_change.get("revision"), field="revision", response=response
-            ),
-            row=row,
+            cursor=cursor, metric=metric, operation_type=operation_type, row=row
         )
         if changes and change.cursor != changes[-1].cursor + 1:
-            raise _protocol_error(response, "change response cursor order is not contiguous")
+            raise _protocol_error(
+                response, "change response cursor order is not contiguous"
+            )
         changes.append(change)
     reset_required = payload.get("reset_required")
     if type(reset_required) is not bool:
@@ -540,9 +532,13 @@ def _parse_changes(response: httpx.Response, *, after: int) -> ChangePage:
         raise _protocol_error(response, "change response cursor exceeds last_cursor")
     if changes:
         if changes[0].cursor != after + 1:
-            raise _protocol_error(response, "change response does not continue the cursor")
+            raise _protocol_error(
+                response, "change response does not continue the cursor"
+            )
         if next_cursor != changes[-1].cursor:
-            raise _protocol_error(response, "change response next_cursor is inconsistent")
+            raise _protocol_error(
+                response, "change response next_cursor is inconsistent"
+            )
     elif not reset_required and next_cursor != after:
         raise _protocol_error(response, "empty change response advances the cursor")
     if reset_required and (changes or next_cursor != last_cursor):
@@ -602,32 +598,6 @@ def _expected_string(
     return parsed
 
 
-def _parse_observation_change(
-    value: object, *, response: httpx.Response
-) -> ObservationChange:
-    if not isinstance(value, dict):
-        raise _protocol_error(response, "ingest response has an invalid change entry")
-    return ObservationChange(
-        cursor=_positive_response_int(
-            value.get("cursor"), field="cursor", response=response
-        ),
-        observation_time_ms=_positive_response_int(
-            value.get("observation_time_ms"),
-            field="observation_time_ms",
-            response=response,
-        ),
-        market_id=_required_string(
-            value.get("market_id"), field="market_id", response=response
-        ),
-        sample_kind=_required_string(
-            value.get("sample_kind"), field="sample_kind", response=response
-        ),
-        revision=_positive_response_int(
-            value.get("revision"), field="revision", response=response
-        ),
-    )
-
-
 def _parse_ingest_result(
     response: httpx.Response,
     *,
@@ -638,12 +608,6 @@ def _parse_ingest_result(
 ) -> ObservationIngestResult:
     payload = _json_object(response)
     schema_version = _schema_version_one(payload, response=response)
-    changes_value = payload.get("changes")
-    if not isinstance(changes_value, list):
-        raise _protocol_error(response, "ingest response has an invalid changes array")
-    changes = tuple(
-        _parse_observation_change(item, response=response) for item in changes_value
-    )
     rows_received = _nonnegative_int(
         payload.get("rows_received"), field="rows_received", response=response
     )
@@ -661,24 +625,22 @@ def _parse_ingest_result(
     cursor_end = _optional_nonnegative_int(
         payload.get("cursor_end"), field="cursor_end", response=response
     )
-    if len(changes) != rows_written:
-        raise _protocol_error(response, "ingest response has inconsistent change count")
     if rows_received != expected_rows_received:
         raise _protocol_error(
             response, "ingest response does not match the submitted row count"
         )
     if rows_received != rows_written + rows_deduplicated:
         raise _protocol_error(response, "ingest response has inconsistent row counts")
-    if changes:
-        if cursor_start != changes[0].cursor or cursor_end != changes[-1].cursor:
-            raise _protocol_error(response, "ingest response has inconsistent cursors")
-        if any(
-            current.cursor != previous.cursor + 1
-            for previous, current in zip(changes, changes[1:])
+    if rows_written:
+        if (
+            cursor_start is None
+            or cursor_end is None
+            or cursor_start < 1
+            or cursor_end - cursor_start + 1 != rows_written
         ):
-            raise _protocol_error(response, "ingest response cursors are not contiguous")
+            raise _protocol_error(response, "ingest response has inconsistent cursors")
     elif cursor_start is not None or cursor_end is not None:
-        raise _protocol_error(response, "ingest response has cursors without changes")
+        raise _protocol_error(response, "ingest response has cursors without writes")
     return ObservationIngestResult(
         schema_version=schema_version,
         gate_id=_expected_string(
@@ -698,7 +660,6 @@ def _parse_ingest_result(
         rows_deduplicated=rows_deduplicated,
         cursor_start=cursor_start,
         cursor_end=cursor_end,
-        changes=changes,
         details=payload,
     )
 

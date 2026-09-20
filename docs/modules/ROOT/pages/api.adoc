@@ -47,7 +47,7 @@ missing or mismatched response cursors raise `ProtocolError`.
 
 Typed models are `FileMetadata`, `FileRange`, `FileDownload`, `FileMutation`,
 `FilePage`, `VersionedDocument`, `GateUniverse`, `UniverseList`,
-`FirstOpenInterestTimes`, `ObservationChange`, `ObservationIngestResult`,
+`FirstOpenInterestTimes`, `ObservationIngestResult`,
 `RunAppendResult`, `StateMutation`, `LatestResult`, `HistoryPage`,
 `ResumeResult`, `CommittedObservationChange`, and `ChangePage`.
 
@@ -57,3 +57,12 @@ for gate, run, and batch identifiers.
 
 Typed failures are `AuthenticationError`, `ConflictError`, `NotFoundError`,
 `ProtocolError`, and `TransportError`, all derived from `StorageClientError`.
+
+== Flat observations
+
+The client follows the flat observation contract. Query payloads use
+`sample_types` (`C`, `H`, `S`), and resume payloads use `sample_type`.
+History and latest payloads may set `initial_only: true` for consumers that
+ignore corrections. Change entries carry `cursor`, `metric`, `operation_type`,
+and one flat `row`; ingestion receipts contain counts and cursor bounds only.
+Receipt idempotency is limited to the server's configured lifetime.

@@ -70,17 +70,6 @@ class VersionedDocument:
 
 
 @dataclass(frozen=True, slots=True)
-class ObservationChange:
-    """One committed observation revision in an ingest result."""
-
-    cursor: int
-    observation_time_ms: int
-    market_id: str
-    sample_kind: str
-    revision: int
-
-
-@dataclass(frozen=True, slots=True)
 class ObservationIngestResult:
     """The durable outcome of one idempotent observation batch."""
 
@@ -93,7 +82,6 @@ class ObservationIngestResult:
     rows_deduplicated: int
     cursor_start: int | None
     cursor_end: int | None
-    changes: tuple[ObservationChange, ...]
     details: JsonObject = field(default_factory=dict)
 
 
@@ -180,16 +168,11 @@ class FirstOpenInterestTimes:
 
 @dataclass(frozen=True, slots=True)
 class CommittedObservationChange:
-    """One globally ordered observation revision from the recovery feed."""
+    """A flat observation delivered in commit sequence order."""
 
     cursor: int
-    gate_id: str
-    batch_id: str
     metric: str
-    observation_time_ms: int
-    market_id: str
-    sample_kind: str
-    revision: int
+    operation_type: str
     row: JsonObject
 
 

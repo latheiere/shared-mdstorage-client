@@ -7,7 +7,7 @@ implementation or market-specific collection logic.
 ## Install
 
 ```bash
-python -m pip install shared-mdstorage-client==0.2.0
+python -m pip install shared-mdstorage-client==0.3.0
 ```
 
 Pin the exact version and artifact hash in production dependency locks.
